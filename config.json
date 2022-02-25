@@ -1,11 +1,11 @@
 {
-	"email": "",
-	"password": "",
-	"quality": 2,
-	"output_dir": "",
-	"template": "{track_padded}. {title}",
+	"email": "aucoffeem@gmail.com",
+	"password": "Pizzahut1234",
+	"quality": 1,
+	"output_dir": "/home/homan/Music/MOOV_DL",
+	"template": "{track_padded}. {artist}-{title}",
 	"comment": "",
-	"keep_cover": false,
-	"lyrics": false,
+	"keep_cover": true,
+	"lyrics": true,
 	"meta_language": 1
 }

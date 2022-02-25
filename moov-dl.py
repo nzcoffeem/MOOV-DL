@@ -22,10 +22,6 @@ def err(msg):
 	print(msg)
 	traceback.print_exc()
 
-def check_url(url):
-	match = re.match(r'https?://moov.hk/#/album/([A-Z\d]{13})', url)
-	return match.group(1)
-
 def parse_cfg():
 	with open('config.json') as f:
 		return json.load(f)
@@ -112,7 +108,7 @@ def dir_setup(path):
 	if not os.path.isdir(path):
 		os.makedirs(path)
 
-def parse_meta(src, meta=None, num=None, total=None, url=None):
+def parse_album_meta(src, meta=None, num=None, total=None, url=None):
 	# Set tracktotal / num manually in case of disked albums.
 	if meta:
 		meta['artist'] = ", ".join(a.get('name') for a in src['artists'])
@@ -137,6 +133,24 @@ def parse_meta(src, meta=None, num=None, total=None, url=None):
 			'tracktotal': total,
 			'year': year
 		}
+	return meta
+
+def parse_chart_meta(src, total=None, url=None):
+	meta={
+		'chartTitle': src[cfg['meta_language']][0],
+		'tracktotal': total
+	}
+	return meta
+
+def parse_chart_num_meta(src, num=None, total=None, url=None):
+	# Set tracktotal / num manually in case of disked albums.
+	meta={
+		'artist': src.get('artist'),
+		'title' : src.get('productTitle'),
+		'track' : num,
+	    'track_padded' : str(num).zfill(2),
+		'tracktotal' : total
+	}
 	return meta
 
 def query_quals(qualities):
@@ -231,10 +245,11 @@ def clean_up():
 	for fname in os.listdir('moov-dl_tmp'):
 		os.remove(os.path.join('moov-dl_tmp', fname))
 
-def main(alb_id, url):
+def downloadAlbum(alb_id, url):
+	print("Downloading album")
 	alb_meta = client.get_album_meta(alb_id)
 	total = len(alb_meta['modules'][0]['products'])
-	parsed_alb_meta = parse_meta(alb_meta, total=total, url=url)
+	parsed_alb_meta = parse_album_meta(alb_meta, total=total, url=url)
 	alb_fol = "{} - {}".format(parsed_alb_meta['albumartist'], parsed_alb_meta['album'])
 	alb_path = os.path.join(cfg['output_dir'], sanitize(alb_fol))
 	cov_path = os.path.join(alb_path, 'cover.jpg')
@@ -242,7 +257,7 @@ def main(alb_id, url):
 	print(alb_fol)
 	for num, track in enumerate(alb_meta['modules'][0]['products'], 1):
 		try:
-			parsed_meta = parse_meta(track, meta=parsed_alb_meta, num=num)
+			parsed_meta = parse_album_meta(track, meta=parsed_alb_meta, num=num)
 			post_path = os.path.join(alb_path, sanitize(parse_template(parsed_meta)) + ".flac")
 			if os.path.isfile(post_path):
 				print("Track already exists locally.")
@@ -253,6 +268,51 @@ def main(alb_id, url):
 			download(file_meta, parsed_meta, pre_path)
 			try:
 				write_cov(cov_path, alb_meta['images'][0]['path'])
+			except HTTPError:
+				err('Failed to get cover.')
+				cov_path = None
+			except OSError:
+				err('Failed to write cover.')
+				cov_path = None
+			write_tags(pre_path, parsed_meta, cov_path)
+			try:
+				os.rename(pre_path, post_path)
+			except OSError:
+				err('Failed to rename track.')
+			if cfg['lyrics']:
+				try:
+					write_lyrics(track['productId'], post_path)
+				except Exception:
+					err('Failed to write lyrics.')
+		except Exception:
+			err('Failed to rip track.')
+	if cov_path and not cfg['keep_cover']:
+		if os.path.isfile(cov_path):
+			os.remove(cov_path)
+
+def downloadChart(playlist_id, url):
+	print("Downloading chart")
+	chart_meta = client.get_chart_meta(playlist_id)
+	total = len(chart_meta['modules'][0]['chartItems'])
+	parsed_chart_meta = parse_chart_meta(chart_meta, total=total, url=url)
+	chart_fol = "{}".format(parsed_chart_meta['chartTitle']) # Maybe use date
+	chart_path = os.path.join(cfg['output_dir'], sanitize(chart_fol))
+	dir_setup(chart_path)
+	print(chart_fol)
+	for num, track in enumerate(chart_meta['modules'][0]['chartItems'], 1):
+		try:
+			parsed_meta = parse_chart_num_meta(track, num=num, total=total)
+			post_path = os.path.join(chart_path, sanitize(parse_template(parsed_meta)) + ".flac")
+			if os.path.isfile(post_path):
+				print("Track already exists locally.")
+				continue
+			pre_path = os.path.join(chart_path, str(num) + ".flac")
+			quality = query_quals(track['qualities'])
+			file_meta = client.get_file_meta(track['productId'], quality)
+			download(file_meta, parsed_meta, pre_path)
+			cov_path = os.path.join(chart_path, sanitize(parse_template(parsed_meta)) + '-cover.jpg')
+			try:
+				write_cov(cov_path, track['thumbnail'])
 			except HTTPError:
 				err('Failed to get cover.')
 				cov_path = None
@@ -298,13 +358,21 @@ if __name__ == '__main__':
 	total = len(cfg['urls'])
 	for num, url in enumerate(cfg['urls'], 1):
 		print("\nAlbum {} of {}:".format(num, total))
-		try:
-			alb_id = check_url(url)
-		except AttributeError:
+
+		matchedAlbum = re.match(r'https?://moov.hk/#/album/([A-Z\d]{13})', url)
+		matchedChart = re.match(r'https?://moov.hk/#/chart/([A-Z\d]{12})', url)
+
+		if matchedAlbum is None and matchedChart is None:
 			print("Invalid url:", url)
 			continue
+
 		try:
-			main(alb_id, url)
+			if bool(matchedAlbum):
+				id = matchedAlbum.group(1)
+				downloadAlbum(id, url)
+			if bool(matchedChart):
+				id = matchedChart.group(1)
+				downloadChart(id, url)
 		except KeyboardInterrupt:
 			pass
 		except Exception:

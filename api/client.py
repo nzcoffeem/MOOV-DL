@@ -59,6 +59,23 @@ class Client():
 			'GET', 'profile/getProfile', headers, params=params
 		)['dataObject']
 
+	def get_chart_meta(self, chart_id):
+		headers={
+			'User-Agent': 'Mozilla/5.0 (Linux; Android 10.0.0; PIXEL 2XL Build/NOF26V; wv)'
+						  'AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/74.0.'
+						  '3729.136 Mobile Safari/537.36/Moov'
+		}
+		params={
+			'profileId': chart_id,
+			'features': '24bit',
+			'deviceType': 'phones3',
+			'refType': 'PC',
+			'checksum': ''
+		}
+		return self.make_call(
+			'GET', 'profile/getProfile', headers, params=params
+		)['dataObject']
+
 	def get_file_meta(self, tra_id, quality):
 		headers={
 			'User-Agent': 'okhttp/4.8.0'
